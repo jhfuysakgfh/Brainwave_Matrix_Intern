@@ -1,78 +1,77 @@
-import re
+  import re
+from urllib.parse import urlparse
 
-
-# Optional: Add your VirusTotal API Key here
-VT_API_KEY = ''  # Add your key or leave blank to skip VirusTotal scan
-
-# List of suspicious keywords often used in phishing URLs
-SUSPICIOUS_KEYWORDS = [
-    'login', 'verify', 'account', 'update', 'secure', 'webscr', 'banking',
-    'confirm', 'wp-admin', 'admin', 'ebayisapi', 'signin'
+# Example blacklist (you can expand this or load from a file)
+blacklist = [
+    "malicious.com",
+    "phishingsite.net",
+    "badlogin.ru"
 ]
 
-# Common URL shortening services
-SHORTENING_SERVICES = [
-    'bit.ly', 'tinyurl.com', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 't.co'
+shorteners = [
+    "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd"
 ]
 
-def is_shortened(url):
-    return any(service in url for service in SHORTENING_SERVICES)
-
-def contains_suspicious_keywords(url):
-    return any(keyword in url.lower() for keyword in SUSPICIOUS_KEYWORDS)
-
-def has_ip_address(url):
-    ip_pattern = r'http[s]?://(?:\d{1,3}\.){3}\d{1,3}'
-    return re.match(ip_pattern, url) is not None
-
-def check_with_virustotal(url):
-    if not VT_API_KEY:
-        return "Skipped (API key not provided)"
-    
-    vt_url = "https://www.virustotal.com/api/v3/urls"
+def is_ip(url):
     try:
-        # URL needs to be encoded in base64 without padding for VT v3 API
-        response = requests.post(vt_url, headers={
-            "x-apikey": VT_API_KEY
-        }, data={"url": url})
+        host = urlparse(url).netloc
+        return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host))
+    except:
+        return False
 
-        if response.status_code == 200:
-            data_id = response.json()['data']['id']
-            result = requests.get(f"{vt_url}/{data_id}", headers={"x-apikey": VT_API_KEY})
-            stats = result.json()['data']['attributes']['last_analysis_stats']
-            return f"VirusTotal Scan: Malicious={stats['malicious']}, Suspicious={stats['suspicious']}"
-        else:
-            return "VirusTotal query failed."
-    except Exception as e:
-        return f"Error querying VirusTotal: {e}"
+def uses_shortener(url):
+    try:
+        domain = urlparse(url).netloc
+        return domain.lower() in shorteners
+    except:
+        return False
+
+def is_blacklisted(url):
+    for bad in blacklist:
+        if bad in url:
+            return True
+    return False
+
+def suspicious_url(url):
+    warnings = []
+
+    if len(url) > 75:
+        warnings.append("⚠️ URL is very long")
+
+    if '@' in url:
+        warnings.append("⚠️ URL contains '@' symbol")
+
+    if '-' in urlparse(url).netloc:
+        warnings.append("⚠️ Domain contains '-'")
+
+    if url.count('.') > 5:
+        warnings.append("⚠️ URL contains many dots")
+
+    if is_ip(url):
+        warnings.append("⚠️ URL uses IP instead of domain")
+
+    if uses_shortener(url):
+        warnings.append("⚠️ URL uses a known URL shortener")
+
+    if is_blacklisted(url):
+        warnings.append("❌ URL is in the blacklist")
+
+    return warnings
 
 def scan_url(url):
-    print(f"\nScanning URL: {url}")
-    issues = []
-
-    if has_ip_address(url):
-        issues.append("⚠️ Uses IP address instead of domain")
-
-    if is_shortened(url):
-        issues.append("⚠️ Uses a known URL shortener")
-
-    if contains_suspicious_keywords(url):
-        issues.append("⚠️ Contains phishing-related keywords")
-
-    vt_result = check_with_virustotal(url)
-    print("✔️ Basic checks done.")
-    
-    # Print results
+    print(f"\n🔎 Scanning URL: {url}")
+    issues = suspicious_url(url)
     if issues:
-        print("Phishing Indicators Detected:")
         for issue in issues:
-            print(" -", issue)
+            print(issue)
+        print("🚨 Potential phishing link detected!")
     else:
-        print("✅ No basic phishing indicators found.")
+        print("✅ URL looks safe (no basic flags raised)")
 
-    print("🔍", vt_result)
-
-# Example usage
+# Sample test
 if __name__ == "__main__":
-    test_url = input("Enter a URL to scan: ")
-    scan_url(test_url)
+    while True:
+        url = input("\nEnter a URL to scan (or 'exit'): ").strip()
+        if url.lower() == "exit":
+            break
+        scan_url(url)
